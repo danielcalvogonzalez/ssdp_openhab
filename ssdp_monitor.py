@@ -15,10 +15,12 @@ import struct
 import datetime
 import sys, os
 import objetosHAB, restHAB
+import argparse
 
 CCuid = 'dc7ff7f0-a369-1366-c8dc-2693f16d3052'
 
-HABLADOR = True
+Debug_Hablador  = True
+Normal_Hablador = True
 
 bbddObjetos = []
 
@@ -65,43 +67,29 @@ DISCOVERY_MSG = ('M-SEARCH * HTTP/1.1\r\n' +
                  'MAN: "ssdp:discover"\r\n' +
                  'HOST: 239.255.255.250:1900\r\n\r\n')
 
-def dump(objeto):
-    for item in objeto:
-        print("DEVICE:", item, "==>", objeto[item])
 
-def ActualizaEstado(objeto, nuevoEstado):
-    if objeto == 'None':
-        print("No tengo el nombre del objeto")
-        return
-    objetoAPI = restHAB.itemAPI()
+def DebugHabla(*args):
+    global ficheroAux
 
-    resultado = objetoAPI.GetStatus(objeto)
-    if resultado == restHAB.ERROR:
-        print("Objeto:", objeto, " No tiene estado visible")
-        return
+    if Debug_Hablador:
+        print(*args, file = ficheroAux)
+    ficheroAux.flush()
+    os.fsync(ficheroAux.fileno())
 
-    if resultado == nuevoEstado:
-        print("Objeto:", objeto, " tiene el mismo estado", nuevoEstado)
-    else:
-        print("Objeto:", objeto, " cambia el estado", resultado, " =>", nuevoEstado)
-        resultado = objetoAPI.PutStatus(objeto, nuevoEstado)
-
-    return
-
-def Habla(*args):
+def HablaPrint(*args)
     global ficheroSalida
 
-    if HABLADOR:
+    if Normal_Hablador:
         print(*args, file = ficheroSalida)
+
 
 def DumpRegistro(ahoraTexto, registro):
     global ficheroSalida
 
-    print(ahoraTexto + "|", file = ficheroSalida, end = '')
+    HablaPrint(ahoraTexto + "|", end = '')
     for item in registro:
-        print(item, registro[item], "|", file = ficheroSalida, end = '')
-    print("", file = ficheroSalida)
-
+        HablaPrint(item, registro[item], "|", end = '')
+    HablaPrint("")
 
 def LimpiarRegistrosAntiguos(bbdd, pulso):
 
@@ -110,12 +98,12 @@ def LimpiarRegistrosAntiguos(bbdd, pulso):
         if 'expira' in bbdd[item]:
             if (pulso-bbdd[item]['momento']).seconds > int(bbdd[item]['expira']):
                 aBorrar.append(item)
-                Habla("He borrado un registro")
-                Habla(bbdd[item]['expira'])
+                DebugHabla("He borrado un registro")
+                DebugHabla(bbdd[item]['expira'])
         elif (pulso-bbdd[item]['momento']).seconds > MAX_TIEMPO:
             aBorrar.append(item)
-            Habla("He borrado un registro")
-            Habla(bbdd[item]['expira'])
+            DebugHabla("He borrado un registro")
+            DebugHabla(bbdd[item]['expira'])
     for item in aBorrar:
         del bbdd[item]
         #
@@ -123,147 +111,13 @@ def LimpiarRegistrosAntiguos(bbdd, pulso):
         # Pues he borrado el registro al no haber recibido actualización
         #
 
-def ConstruyeUPNP(paquete):
-    devolver = {}
-    trozos = paquete['usn:'].split(':')
-    if 'location:' in paquete:
-        devolver['location'] = paquete['location:']
-    devolver['UUID'] = trozos[1]
-    devolver['tipo'] = 'uno'
-    if 'cache-control:' in paquete:
-        tiempos = paquete['cache-control:'].split('=')
-        devolver['CACHE-CONTROL'] = tiempos[1]
-    return devolver
- 
-def ConstruyeUUID(paquete):
-    devolver = {}
-    trozos = paquete['usn:'].split(':')
-    if 'location:' in paquete:
-        devolver['location'] = paquete['location:']
-    devolver['UUID'] = trozos[1]
-    devolver['tipo'] = 'dos'
-    if 'cache-control:' in paquete:
-        tiempos = paquete['cache-control:'].split('=')
-        devolver['CACHE-CONTROL'] = tiempos[1] 
-    return devolver
-
-def ConstruyeURN(paquete):
-    devolver = {}
-    trozos = paquete['usn:'].split(':')
-    if 'location:' in paquete:
-        devolver['location'] = paquete['location:']
-    devolver['urn'] = trozos[4]
-    devolver['device'] = ':'.join(trozos[6:])
-    devolver['tipo'] = 'tres'
-    if 'cache-control:' in paquete:
-        tiempos = paquete['cache-control:'].split('=')
-        devolver['CACHE-CONTROL'] = tiempos[1]  
-    return devolver
-
-def PrimerRegistro(ahora, registro):
-    devolver = {}
-    devolver['momento'] = ahora
-    if registro['tipo'] == 'uno':
-        devolver['uuid'] = registro['uuid']
-        devolver['tipo1'] = ahora
-    elif registro['tipo'] == 'dos':
-        devolver['uuid'] = registro['uuid']
-        devolver['tipo2'] = ahora
-    elif registro['tipo'] == 'tres':
-        devolver['urn'] = registro['urn']
-        devolver['device'] = registro['device']
-        devolver['tipo3'] = ahora
-    
-    if 'location' in registro:
-        devolver['location'] = registro['location']
-    
-    return devolver
-
-def ExisteEntrada(bbdd, registro):
-    if registro['tipo'] == 'uno' and 'tipo1' in bbdd:
-        return True
-    elif registro['tipo'] == 'dos' and 'tipo2' in bbdd:
-        return True
-    elif registro['tipo'] == 'tres' and 'tipo3' in bbdd:
-        return True
-
-    return False
-
-def AnadirRegistro(bbdd, registro, ahora):
-    if registro['tipo'] == 'uno':
-        bbdd['tipo1'] = ahora
-        bbdd['uuid']  = registro['uuid']
-
-    elif registro['tipo'] == 'dos':
-        bbdd['tipo2'] = ahora
-        bbdd['uuid']  = registro['uuid']
-
-    elif registro['tipo'] == 'tres':
-        bbdd['tipo3']  = ahora
-        bbdd['urn']    = registro['urn']
-        bbdd['device'] = registro['device']
-
-def DescubrimientoInicial():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-
-    texto = DISCOVERY_MSG.format('ssdp:all').encode()
-#    texto = DISCOVERY_MSG.format('upnp:rootdevice').encode()
-#    texto = DISCOVERY_MSG.format('uuid:4D454930-0000-1000-8001-A81374B22962').encode()
-    
-
-    sock.sendto(texto, (MCAST_GRP, MCAST_PORT))
-
-    sock.settimeout(3)
-
-    contador = 0
-    while True:
-        try:
-            data, desde = sock.recvfrom(BUFFER_SIZE).split(b'\r\n')
-
-            print("==", contador, end="|")
-
-            for item in data:
-                linea = item.decode('utf-8')
-                tokens = linea.split(":")
-                if len(tokens) == 0:
-                    continue
-                
-                print("HOLA")
-                print(linea, end='|')
-                print("ADIOS")
-                continue
-
-                if tokens[0] == 'ST':
-                    if tokens[1] == ' upnp':
-                        print("--ST-1--", end="|")
-                    elif tokens[1] == ' uuid':
-                        print("--ST-2--", end='|')
-                    elif tokens[1] == ' urn':
-                        if tokens[3] == 'device':
-                            print("--ST-3--", end="|")
-                        else:
-                            print("--ST-4--", tokens[3], end="|")
-                    else:
-                        print("----XYZ----", end='|')
-
-                if tokens[0] == 'USN':
-                    if len(tokens) == 3:
-                        print('--USN-2--', end='|')
-                    elif tokens[4] == 'upnp':
-                        print('--USN-1--', end='|')
-                    elif tokens[6] == 'device':
-                        print('--USN-3--', end='|')
-                    else:
-                        print('--USN-4--', end='|')
-
-            print(" ")
-            contador += 1
-        except socket.timeout:
-            return
-
 
 def ActualizarEstadoObjeto(uuid, registro):
+    """
+    Actualiza el estado de un objeto empleando REST
+    El nuevo estado lo obtiene de registro
+    Y el nombre del objeto, consultando en la bbdd por el uuid
+    """
     global configuracionObjetos
 
     nombreObjeto = configuracionObjetos.BuscarUUID(uuid)
@@ -271,7 +125,7 @@ def ActualizarEstadoObjeto(uuid, registro):
         return
 
     # Averiguar el estado empleando REST
-    objetoAPI = restHAB.itemAPI()
+    objetoAPI = restHAB.ItemAPI()
 
     estadoREST = objetoAPI.GetStatus(nombreObjeto)
     if estadoREST == restHAB.ERROR:
@@ -283,8 +137,6 @@ def ActualizarEstadoObjeto(uuid, registro):
         return
     else:
         objetoAPI.PutStatus(nombreObjeto, estadoSSDP)
-
-
 
 def DescubrirRoot():
     """
@@ -321,7 +173,7 @@ def DescubrirRoot():
 
     while True:
         try:
-            if (ahora - momentoInicial).seconds > 4:
+            if (ahora - momentoInicial).seconds >= 4:
                 break
 
             data, desde = sock.recvfrom(BUFFER_SIZE)
@@ -367,7 +219,7 @@ def DescubrirRoot():
 
         except socket.timeout:
             tiempo = (datetime.datetime.today() - momentoInicial).seconds
-            if tiempo > 4:
+            if tiempo >= 4:
                 break
             continue
         
@@ -441,11 +293,7 @@ def BuscaRegistroRoot(registro):
     if registro['NT'] != 'upnp:rootdevice':
         return
 
-    print(registro, file = ficheroAux)
-
-    ficheroAux.flush()
-
-    os.fsync(ficheroAux.fileno())
+    DebugHabla(registro)
 
     uuid = registro['UUID']
 
@@ -464,12 +312,12 @@ def BuscaRegistroRoot(registro):
             # PowerShell Get-NetIPAddress
             registro['Status'] = 'OFF'
             bbddObjetos[uuid] = registro
-            print(registro['TIME'], registro['FROM'], uuid, "Apagando-2", file=ficheroSalida)
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando-2", file=ficheroSalida)
             ActualizarEstadoObjeto(uuid, registro)
         else:
             registro['Status'] = 'ON'
             bbddObjetos[uuid] = registro
-            print(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
             ActualizarEstadoObjeto(uuid, registro)
             # Toca actualizar este objeto mediante REST
     else:
@@ -478,11 +326,11 @@ def BuscaRegistroRoot(registro):
         if antes != ahora:
             bbddObjetos[uuid]['Status'] = ahora
             if ahora == 'ON':
-                print(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
+                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
             else:
-                print(registro['TIME'], registro['FROM'], uuid, "Apagando", file=ficheroSalida)
+                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando", file=ficheroSalida)
         else:
-            print(registro['TIME'], registro['FROM'], uuid, "Update", bbddObjetos[uuid]['TIME'], \
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Update", bbddObjetos[uuid]['TIME'], \
                     file=ficheroSalida)
 
         # Hay que pensar en varios casos:
@@ -510,6 +358,16 @@ def BuscaRegistroRoot(registro):
 #
 #
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-v",  help="Mostrar mensajes de funcionamiento normal",
+                    action="store_true")
+parser.add_argument("-d",  help="Mostrar mensajes de debugging",
+                    action="store_true")
+                    
+args = parser.parse_args()
+Debug_Hablador  = args.d
+Normal_Hablador = args.v
+
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(('', MCAST_PORT))
@@ -529,7 +387,8 @@ if True:
 else:
     ficheroSalida = open("ssdp.out", 'w')
 
-ficheroAux = open("ssdp.aux", "w")
+if Debug_Hablador:
+    ficheroAux = open("ssdp.aux", "w")
 
 bbddObjetos = DescubrirRoot()
 
@@ -591,8 +450,8 @@ while True:
     elif 'NOTIFY' in paquete:
         tipo = 2
     else:
-        Habla(ahoraTexto, "ERROR: Comando recibido erroneo")
-        Habla(ahoraTexto, "ERROR: ", paquete)
+        DebugHabla(ahoraTexto, "ERROR: Comando recibido erroneo")
+        DebugHabla(ahoraTexto, "ERROR: ", paquete)
         continue
 
 # Aquí solo llego si el comando es uno de los dos aceptados
@@ -620,8 +479,8 @@ while True:
             accion = "OFF"
     
     if accion == '':
-        Habla(ahoraTexto, "ERROR: NOTIFY desde: ", host)
-        Habla(ahoraTexto, "ERROR: ", paquete)
+        DebugHabla(ahoraTexto, "ERROR: NOTIFY desde: ", host)
+        DebugHabla(ahoraTexto, "ERROR: ", paquete)
         continue
 
     #
@@ -651,3 +510,24 @@ while True:
 
     BuscaRegistroRoot(paquete)
     BuscaRegistrosCaducados(bbddObjetos)
+
+"""
+-v mostrar informacion
+-d mostrar informacion de debug
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-v",  help="Mostrar mensajes de funcionamiento normal",
+                    action="store_true")
+parser.add_argument("-d",  help="Mostrar mensajes de debugging",
+                    action="store_true")
+                    
+args = parser.parse_args()
+print(type(args))
+if args.v:
+    print("verbosity turned on")
+if args.d:
+    print("Modo debugging ON")
+
+"""

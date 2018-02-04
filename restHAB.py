@@ -8,7 +8,7 @@
 #
 """ 
 Comunicación REST con openHAB\n
-Implementa clase itemAPI
+Implementa clase ItemAPI
 """
 import requests
 
@@ -21,7 +21,7 @@ ERROR = 'ERROR'
 URL = 'http://192.168.1.5:8080/rest/items/'
 URL_CATEGORIA = '/state'
 
-class itemAPI(object):
+class ItemAPI(object):
     def __init__(self, url = URL, urlCategoria = URL_CATEGORIA):
         self.url = url
         self.urlCategoria = urlCategoria
@@ -31,6 +31,11 @@ class itemAPI(object):
         self.urlCategoria = urlCategoria
 
     def GetStatus(self, objeto):
+        """
+        Obtiene el estado de un objeto via REST
+        Que lo devuelve como resultado de la función.
+        En caso de error, devuelve el literal restHAB.ERROR
+        """
 
         camino = self.url + objeto + self.urlCategoria
         respuesta = requests.get(camino)
@@ -38,10 +43,14 @@ class itemAPI(object):
             return ERROR
         else:
             return respuesta.text
-#
-# Cambia el estado de un item
-#
+
     def PutStatus(self, objeto, estado):
+        """
+        Cambia el estado de un objeto via REST
+
+        Si tiene éxito devuelve OK, 
+        en caso contrario, devuelve restHAP.ERROR
+        """
 
         camino = self.url + objeto + self.urlCategoria
         respuesta = requests.put(camino, data=estado)
