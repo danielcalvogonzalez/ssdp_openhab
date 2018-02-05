@@ -73,10 +73,10 @@ def DebugHabla(*args):
 
     if Debug_Hablador:
         print(*args, file = ficheroAux)
-    ficheroAux.flush()
-    os.fsync(ficheroAux.fileno())
+        ficheroAux.flush()
+        os.fsync(ficheroAux.fileno())
 
-def HablaPrint(*args)
+def HablaPrint(*args):
     global ficheroSalida
 
     if Normal_Hablador:
@@ -312,12 +312,12 @@ def BuscaRegistroRoot(registro):
             # PowerShell Get-NetIPAddress
             registro['Status'] = 'OFF'
             bbddObjetos[uuid] = registro
-            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando-2", file=ficheroSalida)
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando-2")
             ActualizarEstadoObjeto(uuid, registro)
         else:
             registro['Status'] = 'ON'
             bbddObjetos[uuid] = registro
-            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo")
             ActualizarEstadoObjeto(uuid, registro)
             # Toca actualizar este objeto mediante REST
     else:
@@ -326,12 +326,11 @@ def BuscaRegistroRoot(registro):
         if antes != ahora:
             bbddObjetos[uuid]['Status'] = ahora
             if ahora == 'ON':
-                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo", file=ficheroSalida)
+                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Encendiendo")
             else:
-                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando", file=ficheroSalida)
+                HablaPrint(registro['TIME'], registro['FROM'], uuid, "Apagando")
         else:
-            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Update", bbddObjetos[uuid]['TIME'], \
-                    file=ficheroSalida)
+            HablaPrint(registro['TIME'], registro['FROM'], uuid, "Update", bbddObjetos[uuid]['TIME'])
 
         # Hay que pensar en varios casos:
         #   TV apagada sin avisar (quitando cable)
@@ -359,14 +358,29 @@ def BuscaRegistroRoot(registro):
 #
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-v",  help="Mostrar mensajes de funcionamiento normal",
-                    action="store_true")
-parser.add_argument("-d",  help="Mostrar mensajes de debugging",
-                    action="store_true")
-                    
+parser.add_argument("-v",  nargs = '?', const='mio', default='no',
+        help = 'Activa el modo Verbose, y opcionalmente indica el nombre del fichero a usar')
+parser.add_argument("-d",  nargs = '?', const='mio', default='no',
+        help = 'Activa el modo Debug, y opcionalmente indica el nombre del fichero a usar')
+
 args = parser.parse_args()
-Debug_Hablador  = args.d
-Normal_Hablador = args.v
+if args.v == 'no':
+    Normal_Hablador = False
+else:
+    Normal_Hablador = True
+    if args.v == 'mio':
+        ficheroSalida = sys.stdout
+    else:
+        ficheroSalida = open(args.v, 'w')
+
+if args.d == 'no':
+    Debug_Hablador = False
+else:
+    Debug_Hablador = True
+    if args.d == 'mio':
+        ficheroSalida = open("ssdp.out", 'w')
+    else:
+        ficheroSalida = open(args.d, "w")
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -378,17 +392,6 @@ sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)              
 configuracionObjetos = objetosHAB.Objetos()
 objetos = configuracionObjetos.leer()
 
-#
-# Deberia actuar en función de un parámetro
-# de momento, está puesto en el código sin cambios
-#
-if True:
-    ficheroSalida = sys.stdout
-else:
-    ficheroSalida = open("ssdp.out", 'w')
-
-if Debug_Hablador:
-    ficheroAux = open("ssdp.aux", "w")
 
 bbddObjetos = DescubrirRoot()
 
